@@ -1,6 +1,4 @@
 ##################################### annotation ####################################################
-
-
 #annotate your blast output with genes/exons
 #first, load and process gtf file
 gtf.load <- function(wd){
