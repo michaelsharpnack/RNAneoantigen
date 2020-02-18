@@ -125,7 +125,7 @@ netmhc.loader <- function(peplength,patient){
   netmhc <- read.table(paste('TCGA_neoantigens_',peplength,'mer/',patient,"_",peplength,"mer_neoantigens.txt",sep=""),header=FALSE,fill=TRUE,col.names = col.names,sep=',')
   netmhc <- data.frame(netmhc[[3]],netmhc[[2]],netmhc[[13]])
   colnames(netmhc) <- c('V1','V2','V3')
-  netmhc <- dcast(netmhc,V1 ~ V2)
+  netmhc <- dcast(netmhc,V1 ~ V2,value.var = 'V3')
   rownames(netmhc) <- netmhc[[1]]
   netmhc <- netmhc[,-1]
   netmhc <- netmhc[-grep('X',rownames(netmhc)),]

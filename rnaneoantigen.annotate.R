@@ -1,6 +1,6 @@
 ##################################### annotation ####################################################
 #annotate your blast output with genes/exons
-#first, load and process gtf file
+#1. load and process gtf file
 gtf.load <- function(wd){
   gtf <- read.table(paste(wd,'/references/gencode.v22.annotation.gtf',sep=''),sep=";",fill=TRUE,header = F,col.names=c(1:24),colClasses = c("character",rep('NULL',23)))
   gtf.mat <- matrix(NA,nrow=length(gtf[[1]]),ncol=6)
@@ -28,7 +28,7 @@ gtf.load <- function(wd){
   rm(gtf.exon,gtf.gene)
 }
 
-#blast output of contigs
+#2. blast output of contigs
 blast <- function(patient,peplength,wd,max.mutations = 2,max.gaps = 1,onlytophits = TRUE){
   setwd(paste('references/',sep=''))
   #blast your files against reference sequence
@@ -57,58 +57,7 @@ blast <- function(patient,peplength,wd,max.mutations = 2,max.gaps = 1,onlytophit
   return(blastout)
 }
 
-junctioncaller <- function(blastout,wd,patient,contig,pep.contig,peplength){
-  #reblast subsequences with long seqments that do not align and insert them into blastout.mat
-  reblast.front <- blastout[as.numeric(blastout[,7]) > 10,]
-  reblast.back <- blastout[(max(as.numeric(blastout[,8]))-as.numeric(blastout[,8])) >= 10,]
-  
-  contig.write <- vector(mode='character',dim(reblast.front)[1]*2)
-  for(i in 1:dim(reblast.front)[1]){
-    contig.write[2*i-1] <- paste(">",reblast.front[i,1],sep=' ')
-    contig.write[2*i] <- substr(reblast.front[i,17],1,as.numeric(reblast.front[i,7])-1)
-  }
-  write.table(contig.write,file=paste('contig.front/',patient,peplength,sep=''),quote=FALSE,row.names = FALSE,col.names=FALSE)
-  
-  contig.write <- vector(mode='character',dim(reblast.back)[1]*2)
-  for(i in 1:dim(reblast.back)[1]){
-    contig.write[2*i-1] <- paste(">",reblast.back[i,1],sep=' ')
-    contig.write[2*i] <- substr(reblast.back[i,17],as.numeric(reblast.back[i,8])+1,nchar(reblast.back[i,17]))
-  }
-  write.table(contig.write,file=paste('contig.back/',patient,peplength,sep=''),quote=FALSE,row.names = FALSE,col.names=FALSE)
-  
-  setwd(paste('references/',sep=''))
-  #blast your files against reference sequence
-  blastout.temp <- system(paste('./blastn -strand both -reward 1 -penalty -1 -gapextend 1 -gapopen 2 -db ','human_grch38.fa',' -query ',wd,'/contig.front/',patient,peplength,' -outfmt 6',sep=''),intern=TRUE)
-  temp <- strsplit(blastout.temp,'\t')
-  blastout.mat <- matrix(NA,nrow=length(temp),ncol=length(temp[[1]]))
-  for(tempcount in 1:length(temp)){
-    blastout.mat[tempcount,] <- temp[[tempcount]]
-  }
-  col.names.blast <- c('qseqid','sseqid','% identical matches','alignment length','number of mismatches','number of gap openings','query start','query end','subject start','subject end','evalue','bitscore')
-  colnames(blastout.mat) <- col.names.blast
-  blastout.front <- blastout.mat
-  rm(blastout.mat,temp)
-  setwd('..')
-  
-  setwd(paste('references/',sep=''))
-  #blast your files against reference sequence
-  blastout.temp <- system(paste('./blastn -strand both -reward 1 -penalty -1 -gapextend 1 -gapopen 2 -db ','human_grch38.fa',' -query ',wd,'/contig.back/',patient,peplength,' -outfmt 6',sep=''),intern=TRUE)
-  temp <- strsplit(blastout.temp,'\t')
-  blastout.mat <- matrix(NA,nrow=length(temp),ncol=length(temp[[1]]))
-  for(tempcount in 1:length(temp)){
-    blastout.mat[tempcount,] <- temp[[tempcount]]
-  }
-  col.names.blast <- c('qseqid','sseqid','% identical matches','alignment length','number of mismatches','number of gap openings','query start','query end','subject start','subject end','evalue','bitscore')
-  colnames(blastout.mat) <- col.names.blast
-  blastout.back <- blastout.mat
-  rm(blastout.mat,temp)
-  setwd('..')
-  
-  
-  
-}
-
-#getfasta of your new blasted segments and compare them with your contigs
+#3. getfasta of your new blasted segments and compare them with your contigs (note have to run this again after 4)
 fastafromblast <- function(patient,wd,blastout,contig,pep.contig,peplength){
   #write bed file
   strand <- rep('-',dim(blastout)[1])
@@ -137,6 +86,7 @@ fastafromblast <- function(patient,wd,blastout,contig,pep.contig,peplength){
   complementer[['C']] <- 'G'
   complementer[['G']] <- 'C'
   complementer[['T']] <- 'A'
+  complementer[['N']] <- 'N'
   
   for(i in 1:dim(fasta.temp)[1]){
     if(fasta.temp[i,1] == '-'){
@@ -152,91 +102,88 @@ fastafromblast <- function(patient,wd,blastout,contig,pep.contig,peplength){
   
 }
 
-
-
-#second, match gtf features to blast locations
-gtf.blast <- function(blastout,gtf.gene.list,gtf.exon.list,mart){
-  blastout.temp <- matrix(NA,nrow=dim(blastout)[1],ncol=8)
-  for(i in 1:dim(blastout)[1]){
-    if(as.numeric(blastout[i,10]) > as.numeric(blastout[i,9])){
-      temp <- gtf.gene.list[[blastout[i,2]]]
-      temp <- temp[temp[,5] == '+',]
-      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
-      if(length(temp1) == 1){blastout.temp[i,1] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))
-      } else if(length(temp1) == 2){blastout.temp[i,c(1:2)] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))}
-      
-      temp <- gtf.exon.list[[blastout[i,2]]]
-      temp <- temp[temp[,5] == '+',]
-      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
-      if(length(temp1) == 1){blastout.temp[i,3] <- substr(temp1,9,nchar(temp1)[1])
-      } else if(length(temp1) == 2){blastout.temp[i,c(3:4)] <- substr(temp1,9,nchar(temp1)[1])}
-      
+#4. blast with gapped junctions
+junctioncaller <- function(blastout,wd,patient,contig,pep.contig,peplength){
+  setwd(wd)
+  #reblast subsequences with long seqments that do not align and insert them into blastout.mat
+  reblast.front <- blastout[as.numeric(blastout[,7]) > 10,]
+  reblast.back <- blastout[(max(as.numeric(blastout[,8]))-as.numeric(blastout[,8])) >= 10,]
+  
+  if(dim(reblast.front)[1] > 0){
+    contig.write <- vector(mode='character',dim(reblast.front)[1]*2)
+    for(i in 1:dim(reblast.front)[1]){
+      contig.write[2*i-1] <- paste(">",reblast.front[i,1],sep=' ')
+      contig.write[2*i] <- substr(reblast.front[i,17],1,as.numeric(reblast.front[i,7])-1)
+    }
+    write.table(contig.write,file=paste('contig.front/',patient,peplength,sep=''),quote=FALSE,row.names = FALSE,col.names=FALSE)
+  }
+  
+  if(dim(reblast.back)[1] > 0){
+    contig.write <- vector(mode='character',dim(reblast.back)[1]*2)
+    for(i in 1:dim(reblast.back)[1]){
+      contig.write[2*i-1] <- paste(">",reblast.back[i,1],sep=' ')
+      contig.write[2*i] <- substr(reblast.back[i,17],as.numeric(reblast.back[i,8])+1,nchar(reblast.back[i,17]))
+    }
+    write.table(contig.write,file=paste('contig.back/',patient,peplength,sep=''),quote=FALSE,row.names = FALSE,col.names=FALSE)
+  }
+  
+  if(dim(reblast.front)[1] > 0){
+    setwd(paste('references/',sep=''))
+    #blast your files against reference sequence
+    blastout.temp <- system(paste('./blastn -strand both -reward 1 -penalty -1 -gapextend 1 -gapopen 2 -db ','human_grch38.fa',' -query ',wd,'/contig.front/',patient,peplength,' -outfmt 6',sep=''),intern=TRUE)
+    if(is.null(dim(blastout.temp)) == FALSE){
+      temp <- strsplit(blastout.temp,'\t')
+      blastout.mat <- matrix(NA,nrow=length(temp),ncol=length(temp[[1]]))
+      for(tempcount in 1:length(temp)){
+        blastout.mat[tempcount,] <- temp[[tempcount]]
+      }
+      col.names.blast <- c('qseqid','sseqid','% identical matches','alignment length','number of mismatches','number of gap openings','query start','query end','subject start','subject end','evalue','bitscore')
+      colnames(blastout.mat) <- col.names.blast
+      blastout.front <- blastout.mat
+      rm(blastout.mat,temp)
     } else {
-      temp <- gtf.gene.list[[blastout[i,2]]]
-      temp <- temp[temp[,5] == '-',]
-      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
-      if(length(temp1) == 1){blastout.temp[i,1] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))
-      } else if(length(temp1) == 2){blastout.temp[i,c(1:2)] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))}
-       
-      temp <- gtf.exon.list[[blastout[i,2]]]
-      temp <- temp[temp[,5] == '-',]
-      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
-      if(length(temp1) == 1){blastout.temp[i,3] <- substr(temp1,9,nchar(temp1)[1])
-      } else if(length(temp1) == 2){blastout.temp[i,c(3:4)] <- substr(temp1,9,nchar(temp1)[1])}
-      
+      blastout.front <- matrix(NA,nrow=0,ncol=12)
     }
+    setwd('..')
   }
   
-  #use biomart to add in gene symbols
-  ens <- c(blastout.temp[,1][is.na(blastout.temp[,1]) == FALSE],blastout.temp[,2][is.na(blastout.temp[,2]) == FALSE])
-  ensLookup <- unique(ens)
-  annotLookup <- getBM(
-    mart=mart,
-    attributes=c("ensembl_transcript_id", "ensembl_gene_id", "gene_biotype", "external_gene_name"),
-    filter="ensembl_gene_id",
-    values=ensLookup,
-    uniqueRows=TRUE)
-  annotLookup <- unique(annotLookup[,c(2,3,4)])
-  for(i in 1:dim(blastout.temp)[1]){
-    j = sum(is.na(blastout.temp[i,c(1:2)]) == FALSE)
-    if(j == 1){
-      
-      temp2 <- annotLookup$gene_biotype[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
-      if(length(temp2) > 0){blastout.temp[i,5] <- temp2}
-      
-      temp2 <- annotLookup$external_gene_name[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
-      if(length(temp2) > 0){blastout.temp[i,6] <- temp2}
-      
-    } else if(j == 2){
-      
-      temp2 <- annotLookup$gene_biotype[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
-      if(length(temp2) > 0){blastout.temp[i,5]}
-      
-      temp2 <- annotLookup$external_gene_name[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
-      if(length(temp2) > 0){blastout.temp[i,6]}
-      
-      temp2 <- annotLookup$gene_biotype[annotLookup$ensembl_gene_id == blastout.temp[i,2]]
-      if(length(temp2) > 0){blastout.temp[i,7]}
-      
-      temp2 <- annotLookup$external_gene_name[annotLookup$ensembl_gene_id == blastout.temp[i,2]]
-      if(length(temp2) > 0){blastout.temp[i,8]}
+  if(dim(reblast.back)[1] > 0){
+    setwd(paste('references/',sep=''))
+    #blast your files against reference sequence
+    blastout.temp <- system(paste('./blastn -strand both -reward 1 -penalty -1 -gapextend 1 -gapopen 2 -db ','human_grch38.fa',' -query ',wd,'/contig.back/',patient,peplength,' -outfmt 6',sep=''),intern=TRUE)
+    if(is.null(dim(blastout.temp)) == FALSE){
+      temp <- strsplit(blastout.temp,'\t')
+      blastout.mat <- matrix(NA,nrow=length(temp),ncol=length(temp[[1]]))
+      for(tempcount in 1:length(temp)){
+        blastout.mat[tempcount,] <- temp[[tempcount]]
+      }
+      col.names.blast <- c('qseqid','sseqid','% identical matches','alignment length','number of mismatches','number of gap openings','query start','query end','subject start','subject end','evalue','bitscore')
+      colnames(blastout.mat) <- col.names.blast
+      blastout.back <- blastout.mat
+      rm(blastout.mat,temp)
+    } else {
+      blastout.back <- matrix(NA,nrow=0,ncol=12)
     }
+    setwd('..')
   }
-  colnames(blastout.temp) <- c('Gencode gene 1','Gencode gene 2','Gencode exon 1','Gencode exon 2','Gene type 1','Hugo Symbol 1','Gene type 2','Hugo symbol 2')
-  blastout <- cbind(blastout,blastout.temp)
   
-  
-  return(blastout)
+  if(dim(reblast.front)[1] > 0 & dim(reblast.front)[1] > 0){
+    blastout <- rbind(blastout[,1:12],blastout.front,blastout.back)
+  } else if(dim(reblast.front)[1] > 0){
+    blastout <- rbind(blastout[,1:12],blastout.front)
+  } else if(dim(reblast.back)[1] > 0){
+    blastout <- rbind(blastout[,1:12],blastout.back)
+  }
+  return(blastout[order(blastout[,1],decreasing=FALSE),])
 }
 
-
-
+#5. call variants in your contigs
 variantcaller <- function(patient,wd,blastout,peplength,max.mutations = 2, max.gaps = 1){
   
   #get start and stop of peptide coding sequence on the reference mapping
   start.coding <- as.numeric(blastout[,16])-as.numeric(blastout[,7])+1
   coding.bases <- as.numeric(blastout[,4])-start.coding+1
-
+  
   variants <- list()
   #filter out any mappings that do not cover the peptide coding sequence -- will have to modify this step after we account for gapped alignment
   blastout.temp <- blastout[start.coding >= 1 & coding.bases >= peplength*3,]
@@ -331,7 +278,7 @@ variantcaller <- function(patient,wd,blastout,peplength,max.mutations = 2, max.g
   if(dim(variants[[2]])[1] > 0){
     start.coding.temp <- as.numeric(variants[[2]][,16])-as.numeric(variants[[2]][,7])+1
     for(i in 1:dim(variants[[2]])[1]){
-      temp.bases <- substr(variants[[2]][i,14],start.coding.temp[i],start.coding.temp[i]+peplength*3-1)
+      temp.bases <- toupper(substr(variants[[2]][i,14],start.coding.temp[i],start.coding.temp[i]+peplength*3-1))
       temp.peptide <- vector(mode='character',0)
       #translate to find reference peptide sequence
       for(j in 1:peplength){
@@ -395,7 +342,7 @@ variantcaller <- function(patient,wd,blastout,peplength,max.mutations = 2, max.g
           ref.peptide <- c(ref.peptide,aa.table[[substr(temp.ref,(j-1)*3+start.coding.temp,start.coding.temp+j*3-1)]])
         }
         variants[[3]][i,18] <- paste(ref.peptide,collapse='')
-      
+        
       } else if(variants[[3]][i,21] == 'DEL'){
         #try deleting each base and see if it fixes the alignment
         gap.length <- nchar(variants[[3]][i,14])-(as.numeric(variants[[3]][i,8])-as.numeric(variants[[3]][i,7])+1)
@@ -447,16 +394,142 @@ variantcaller <- function(patient,wd,blastout,peplength,max.mutations = 2, max.g
   
 }
 
-framed <- function(){
+#6. match gtf features to blast locations
+gtf.blast <- function(blastout,gtf.gene.list,gtf.exon.list,mart){
+  blastout.temp <- matrix(NA,nrow=dim(blastout)[1],ncol=8)
+  for(i in 1:dim(blastout)[1]){
+    if(as.numeric(blastout[i,10]) > as.numeric(blastout[i,9])){
+      temp <- gtf.gene.list[[blastout[i,2]]]
+      temp <- temp[temp[,5] == '+',]
+      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
+      if(length(temp1) == 1){blastout.temp[i,1] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))
+      } else if(length(temp1) == 2){blastout.temp[i,c(1:2)] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))}
+      
+      temp <- gtf.exon.list[[blastout[i,2]]]
+      temp <- temp[temp[,5] == '+',]
+      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
+      if(length(temp1) == 1){blastout.temp[i,3] <- substr(temp1,9,nchar(temp1)[1])
+      } else if(length(temp1) == 2){blastout.temp[i,c(3:4)] <- substr(temp1,9,nchar(temp1)[1])}
+      
+    } else {
+      temp <- gtf.gene.list[[blastout[i,2]]]
+      temp <- temp[temp[,5] == '-',]
+      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
+      if(length(temp1) == 1){blastout.temp[i,1] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))
+      } else if(length(temp1) == 2){blastout.temp[i,c(1:2)] <- gsub("\\.[0-9]*$", "",substr(temp1,9,nchar(temp1)[1]))}
+       
+      temp <- gtf.exon.list[[blastout[i,2]]]
+      temp <- temp[temp[,5] == '-',]
+      temp1 <- temp[(as.numeric(blastout[i,9]) > as.numeric(temp[,3]) & as.numeric(blastout[i,9]) < as.numeric(temp[,4])) | (as.numeric(blastout[i,10]) > as.numeric(temp[,3]) & as.numeric(blastout[i,10]) < as.numeric(temp[,4])),6]
+      if(length(temp1) == 1){blastout.temp[i,3] <- substr(temp1,9,nchar(temp1)[1])
+      } else if(length(temp1) == 2){blastout.temp[i,c(3:4)] <- substr(temp1,9,nchar(temp1)[1])}
+      
+    }
+  }
+  
+  #use biomart to add in gene symbols
+  ens <- c(blastout.temp[,1][is.na(blastout.temp[,1]) == FALSE],blastout.temp[,2][is.na(blastout.temp[,2]) == FALSE])
+  ensLookup <- unique(ens)
+  annotLookup <- getBM(
+    mart=mart,
+    attributes=c("ensembl_transcript_id", "ensembl_gene_id", "gene_biotype", "external_gene_name"),
+    filter="ensembl_gene_id",
+    values=ensLookup,
+    uniqueRows=TRUE)
+  annotLookup <- unique(annotLookup[,c(2,3,4)])
+  for(i in 1:dim(blastout.temp)[1]){
+    j = sum(is.na(blastout.temp[i,c(1:2)]) == FALSE)
+    if(j == 1){
+      
+      temp2 <- annotLookup$gene_biotype[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
+      if(length(temp2) > 0){blastout.temp[i,5] <- temp2}
+      
+      temp2 <- annotLookup$external_gene_name[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
+      if(length(temp2) > 0){blastout.temp[i,6] <- temp2}
+      
+    } else if(j == 2){
+      
+      temp2 <- annotLookup$gene_biotype[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
+      if(length(temp2) > 0){blastout.temp[i,5]}
+      
+      temp2 <- annotLookup$external_gene_name[annotLookup$ensembl_gene_id == blastout.temp[i,1]]
+      if(length(temp2) > 0){blastout.temp[i,6]}
+      
+      temp2 <- annotLookup$gene_biotype[annotLookup$ensembl_gene_id == blastout.temp[i,2]]
+      if(length(temp2) > 0){blastout.temp[i,7]}
+      
+      temp2 <- annotLookup$external_gene_name[annotLookup$ensembl_gene_id == blastout.temp[i,2]]
+      if(length(temp2) > 0){blastout.temp[i,8]}
+    }
+  }
+  colnames(blastout.temp) <- c('Gencode gene 1','Gencode gene 2','Gencode exon 1','Gencode exon 2','Gene type 1','Hugo Symbol 1','Gene type 2','Hugo symbol 2')
+  blastout <- cbind(blastout,blastout.temp)
+  
+  
+  return(blastout)
+}
+
+#7. annotate with frame info
+framed.load <- function(wd){
   #Determines if peptide is in or out of frame. Additionally handles the frameshift mutations from variant caller
+  setwd(wd)
   ccds <- fread('references/ccds/CCDS.current.txt')
   ccds <- ccds[ccds[[6]] == 'Public',]
   ccds.exon <- ccds[[10]]
   ccds.exon <- substr(ccds.exon,2,nchar(ccds.exon)-1)
-  
+  ccds.mat <- matrix(NA,nrow=1000000,ncol=5)
+  k = 0
+  for(i in 1:length(ccds.exon)){
+    temp = strsplit(ccds.exon[i],',')[[1]]
+    for(j in 1:length(temp)){
+      temp2 <- strsplit(temp[j],'-')[[1]]
+      k = k+1
+      ccds.mat[k,1] <- ccds[[5]][i]
+      ccds.mat[k,2] <- ccds[[1]][i]
+      ccds.mat[k,3:4] <- temp2
+      ccds.mat[k,5] <- ccds[[7]][i]
+    }
+  }
+  ccds.mat <- ccds.mat[1:k,]
+  ccds.length <- ((as.numeric(ccds.mat[,4])-as.numeric(ccds.mat[,3])+1) %% 3)
+  ccds.frame <- vector(mode='numeric',length(ccds.length))
+  l = 1
+  m = 0
+  for(i in 2:(length(ccds.length)-1)){
+    if(ccds.mat[i,1] != ccds.mat[l,1]){
+      l = i
+      ccds.frame[i] = 0
+      m = 0
+    } else {
+      m = m+ccds.length[i-1]
+      ccds.frame[i] = m %% 3
+    }
+  }
+  ccds.mat <- trimws(ccds.mat)
+  return(list(ccds,cbind(ccds.mat,ccds.frame)))
 }
-  
 
+framed <- function(ccds.mat,blastout){
+  blastout <- blastout[nchar(blastout[,2]) < 7,] #remove when maps to random or unmapped segments
+  temp <- cbind(substr(blastout[,2],4,nchar(blastout[,2])),blastout[,c(9,10,13,16)])
+  temp[,2] <- as.numeric(temp[,2])+as.numeric(temp[,5])-1 #this is the actual start site of the peptide
+  blastout <- cbind(blastout,matrix(NA,nrow=dim(blastout)[1],ncol=2))
+  blastout[,(dim(blastout)[2]-1)] <- rep('Non-coding',dim(blastout)[1])
+  colnames(blastout)[c((dim(blastout)[2]-1),(dim(blastout)[2]))] <- c('Coding?','Frame offset')
+  for(i in 1:dim(temp)[1]){
+    temp1 <- ccds.mat[temp[i,1] == ccds.mat[,2] & temp[i,4] == ccds.mat[,5] & 
+               (as.numeric(temp[i,2]) >= as.numeric(ccds.mat[,3]) & 
+                   as.numeric(temp[i,2]) <= as.numeric(ccds.mat[,4])),]
+    if(is.null(dim(temp1))){
+      blastout[i,dim(blastout)[2]-1] <- 'Coding'
+      blastout[i,dim(blastout)[2]] <- (as.numeric(temp[i,2])-as.numeric(temp1[3])+as.numeric(temp1[6])) %% 3
+    } else if(dim(temp1)[1] > 0){
+      blastout[i,dim(blastout)[2]-1] <- 'Coding'
+      blastout[i,dim(blastout)[2]] <- (as.numeric(temp[i,2])-as.numeric(temp1[1,3])+as.numeric(temp1[1,6])) %% 3
+    }
+  }
+  return(blastout)
+}
 
 
 
